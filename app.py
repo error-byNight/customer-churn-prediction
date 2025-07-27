@@ -4,8 +4,8 @@ import numpy as np
 import os
 import joblib # For loading models and preprocessor
 from datetime import datetime, timedelta
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
+# Removed direct imports for StandardScaler, OneHotEncoder, ColumnTransformer
+# as they will be loaded from the saved preprocessor object
 
 # --- Configuration (matching previous scripts) ---
 # Ensure these match the values used during data generation and feature engineering
@@ -17,42 +17,20 @@ processed_data_dir = 'data/processed'
 models_dir = 'models'
 
 # --- Load necessary components ---
-# IMPORTANT: In a real production pipeline, you would save the *fitted* preprocessor
-# from 02_feature_engineering.py and load it here.
-# For this demonstration, we'll re-initialize and fit a dummy preprocessor
-# based on the structure of the final processed data.
-# This assumes the column order and categories are consistent.
-
-# Load a sample of the processed data to infer columns for the preprocessor
+# Load the *fitted* preprocessor (ColumnTransformer)
 try:
-    sample_df_for_cols = pd.read_csv(os.path.join(processed_data_dir, 'consolidated_churn_data_final.csv'))
-    # Drop User ID and Churn from this sample to get feature columns for preprocessor
-    X_sample = sample_df_for_cols.drop(columns=['User ID', 'Churn'])
-
-    # Re-identify columns for preprocessor based on the sample data
-    categorical_cols = X_sample.select_dtypes(include='object').columns.tolist()
-    numerical_cols = X_sample.select_dtypes(include=np.number).columns.tolist()
-    cols_to_scale = [col for col in numerical_cols if col not in ['Account Age', 'Days Since Last Activity']]
-    cols_to_passthrough_numerical = [col for col in numerical_cols if col in ['Account Age', 'Days Since Last Activity']]
-
-    # Re-create the ColumnTransformer structure
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', StandardScaler(), cols_to_scale),
-            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols),
-            ('passthrough_num', 'passthrough', cols_to_passthrough_numerical)
-        ]
-    )
-    # Fit the preprocessor on the sample data.
-    # This is a simplification for the app demo. In production, load the saved, fitted preprocessor.
-    preprocessor.fit(X_sample)
-    st.sidebar.success("Preprocessor initialized successfully (for demonstration).")
+    preprocessor = joblib.load(os.path.join(models_dir, 'preprocessor.pkl'))
+    st.sidebar.success("Preprocessor Loaded Successfully!")
+    
+    # Load the original feature names that the preprocessor expects as input
+    original_feature_names_for_preprocessor = joblib.load(os.path.join(models_dir, 'original_feature_names.pkl'))
+    print(f"Loaded original feature names for preprocessor. Example: {original_feature_names_for_preprocessor[:5]}...")
 
 except FileNotFoundError as e:
-    st.error(f"Error loading sample data for preprocessor setup: {e}. Ensure '02_feature_engineering.py' was run.")
+    st.error(f"Error loading preprocessor or original feature names: {e}. Ensure '02_feature_engineering.py' was run and saved these files.")
     st.stop()
 except Exception as e:
-    st.error(f"Error initializing preprocessor: {e}")
+    st.error(f"Error loading preprocessor: {e}")
     st.stop()
 
 
@@ -139,10 +117,10 @@ def get_new_user_input_features():
     days_since_last_activity = st.sidebar.number_input("Days Since Last Activity (Overall)", min_value=0, value=30)
 
 
-    # Create a dictionary with all 54 features, ensuring column names match X_sample.columns
-    # Fill in placeholder values for features not explicitly exposed in UI
-    data = {col: 0 for col in X_sample.columns} # Initialize with zeros
-    data.update({
+    # Create a dictionary with all input features.
+    # The order of columns in this dictionary will be used to create the DataFrame.
+    # It must match the order of `original_feature_names_for_preprocessor`.
+    data = {
         'Age': age,
         'Gender': gender,
         'Location': location,
@@ -181,10 +159,11 @@ def get_new_user_input_features():
         'social_total_engagement_freq_last_30d': social_total_engagement_freq_last_30d,
         'social_count_last_90d': social_count_last_90d,
         'social_total_engagement_freq_last_90d': social_total_engagement_freq_last_90d
-    })
+    }
 
-    # Create DataFrame, ensuring column order matches X_sample.columns
-    features = pd.DataFrame([data], columns=X_sample.columns)
+    # Create DataFrame, ensuring column order matches original_feature_names_for_preprocessor
+    # This is crucial for the preprocessor to work correctly.
+    features = pd.DataFrame([data], columns=original_feature_names_for_preprocessor)
     return features
 
 
@@ -224,15 +203,16 @@ elif input_option == "Select Existing User":
         st.sidebar.markdown("---")
         st.sidebar.subheader("Selected User's Data Preview")
         selected_user_data = existing_users_df[existing_users_df['User ID'] == selected_user_id].iloc[0]
-        st.sidebar.write(selected_user_data.drop('Churn')) # Hide churn label from input preview
-        st.sidebar.markdown("---")
-        if st.sidebar.button("Predict Churn for Selected User"):
-            # Prepare data for prediction (drop User ID and Churn from features)
-            user_features = selected_user_data.drop(['User ID', 'Churn']).to_frame().T
-            
-            # Ensure the order of columns matches the training data by reindexing
-            user_features = user_features.reindex(columns=X_sample.columns, fill_value=0)
+        
+        # Prepare data for prediction (drop User ID and Churn from features)
+        # Ensure the columns match the original input features expected by the preprocessor
+        user_features_raw = selected_user_data.drop(['User ID', 'Churn']).to_frame().T
+        user_features = user_features_raw.reindex(columns=original_feature_names_for_preprocessor, fill_value=0)
 
+        st.sidebar.write(user_features) # Show the raw features being passed to preprocessor
+        st.sidebar.markdown("---")
+
+        if st.sidebar.button("Predict Churn for Selected User"):
             # Preprocess the selected user's data using the fitted preprocessor
             processed_user_features = preprocessor.transform(user_features)
             processed_user_features_df = pd.DataFrame(processed_user_features, columns=preprocessor.get_feature_names_out())
@@ -275,6 +255,6 @@ This dashboard demonstrates a customer churn prediction model.
 - **Metrics:** The model aims to optimize for Precision, Recall, F1-Score, and ROC-AUC, especially for the minority churn class.
 """)
 
-# st.markdown("---")
-# st.write("Developed as part of a predictive analytics pipeline project.")
+st.markdown("---")
+st.write("Developed as part of a predictive analytics pipeline project.")
 

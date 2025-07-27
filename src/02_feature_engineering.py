@@ -5,11 +5,14 @@ from datetime import datetime, timedelta
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+import joblib # Import joblib for saving objects
 
 # Define directories
 data_dir = 'data/raw'
 processed_data_dir = 'data/processed'
+models_dir = 'models' # Ensure this directory exists to save models and preprocessor
 os.makedirs(processed_data_dir, exist_ok=True)
+os.makedirs(models_dir, exist_ok=True)
 
 # --- Configuration (matching previous scripts) ---
 END_DATE = datetime(2024, 7, 31)
@@ -205,3 +208,12 @@ print(master_df_final.head())
 output_filepath_final = os.path.join(processed_data_dir, 'consolidated_churn_data_final.csv')
 master_df_final.to_csv(output_filepath_final, index=False)
 print(f"\nFully processed DataFrame saved to {output_filepath_final}")
+
+# Save the fitted preprocessor
+joblib.dump(preprocessor, os.path.join(models_dir, 'preprocessor.pkl'))
+print(f"Fitted preprocessor saved to {os.path.join(models_dir, 'preprocessor.pkl')}")
+
+# Save the list of original feature names that the preprocessor expects as input
+original_feature_names_for_preprocessor = X.columns.tolist()
+joblib.dump(original_feature_names_for_preprocessor, os.path.join(models_dir, 'original_feature_names.pkl'))
+print(f"Original feature names for preprocessor saved to {os.path.join(models_dir, 'original_feature_names.pkl')}")

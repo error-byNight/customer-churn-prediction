@@ -1,0 +1,75 @@
+    name: CI/CD Pipeline
+
+    on:
+      push:
+        branches:
+          - main # Trigger on pushes to the main branch
+      pull_request:
+        branches:
+          - main # Trigger on pull requests to the main branch
+
+    jobs:
+      build-and-test:
+        runs-on: ubuntu-latest # Use a Linux environment for consistency
+
+        steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4 # Action to check out your repository code
+
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.10' # Use a compatible Python version, e.g., 3.10 or 3.9
+
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            # Install Faker separately if it's not a direct dependency of the app but needed for data generation in tests
+            pip install faker
+
+        - name: Run Data Generation Script
+          # This step ensures raw data files are present for subsequent steps
+          run: python src/generate_and_load_data.py
+
+        - name: Run Data Consolidation Script
+          run: python src/01_data_consolidation_churn.py
+
+        - name: Run Feature Engineering Script
+          run: python src/02_feature_engineering.py
+
+        - name: Run Model Training and Evaluation Script
+          run: python src/04_model_training_evaluation.py
+
+        - name: Run Model Interpretation Script
+          run: python src/05_model_interpretation.py
+
+        # You can add unit tests here if you create them (e.g., using pytest)
+        # - name: Run Unit Tests
+        #   run: pytest tests/
+
+        # Optional: Add a step to notify on success or failure, or for deployment
+        # For Heroku deployment, you'd add another job or step here
+        - name: Check for generated artifacts
+          run: |
+            ls -R data/processed/
+          ls -R models/
+          
+        - name: Build Streamlit App (Conceptual)
+          run: echo "Streamlit app build check passed (no explicit build step needed for Streamlit)"
+
+      # You would add a separate 'deploy' job here for Heroku deployment
+      # This is a placeholder for now, we'll configure it after these files are committed.
+      # deploy:
+      #   needs: build-and-test
+      #   runs-on: ubuntu-latest
+      #   steps:
+      #     - name: Checkout repository
+      #       uses: actions/checkout@v4
+      #     - name: Deploy to Heroku
+      #       uses: akhileshns/heroku-deploy@v3.12.12
+      #       with:
+      #         heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+      #         heroku_app_name: "your-heroku-app-name" # Replace with your Heroku app name
+      #         heroku_email: "your-heroku-email" # Replace with your Heroku email
+    
